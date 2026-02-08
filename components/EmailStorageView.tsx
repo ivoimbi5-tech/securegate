@@ -3,6 +3,16 @@ import React, { useState, useEffect } from 'react';
 import BrandIcon from './BrandIcon';
 import { getSecurityTip } from '../services/geminiService';
 import { SecurityTip, StoredCredential } from '../types';
+import { db } from '../services/firebase';
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  deleteDoc, 
+  doc 
+} from 'firebase/firestore';
 
 interface EmailStorageViewProps {
   onLogout: () => void;
@@ -14,24 +24,29 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
   const [credentials, setCredentials] = useState<StoredCredential[]>([]);
   const [tip, setTip] = useState<SecurityTip | null>(null);
   const [isLoadingTip, setIsLoadingTip] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const saved = localStorage.getItem('stored_credentials');
-    if (saved) {
-      try {
-        setCredentials(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse credentials", e);
-      }
-    }
-    fetchNewTip();
-  }, []);
+    // Configurar listener em tempo real do Firestore
+    const q = query(collection(db, "credentials"), orderBy("createdAt", "desc"));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const items: StoredCredential[] = [];
+      querySnapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() } as StoredCredential);
+      });
+      setCredentials(items);
+      setIsLoadingData(false);
+    }, (error) => {
+      console.error("Erro ao buscar dados do Firebase:", error);
+      setIsLoadingData(false);
+    });
 
-  const saveCredentials = (updated: StoredCredential[]) => {
-    setCredentials(updated);
-    localStorage.setItem('stored_credentials', JSON.stringify(updated));
-  };
+    fetchNewTip();
+
+    return () => unsubscribe();
+  }, []);
 
   const fetchNewTip = async () => {
     setIsLoadingTip(true);
@@ -40,22 +55,29 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
     setIsLoadingTip(false);
   };
 
-  const handleAddCredential = (e: React.FormEvent) => {
+  const handleAddCredential = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newCredential: StoredCredential = {
-      id: Math.random().toString(36).substr(2, 9),
-      email,
-      password,
-      createdAt: Date.now()
-    };
-    saveCredentials([newCredential, ...credentials]);
-    setEmail('');
-    setPassword('');
+    try {
+      await addDoc(collection(db, "credentials"), {
+        email,
+        password,
+        createdAt: Date.now()
+      });
+      setEmail('');
+      setPassword('');
+    } catch (error) {
+      console.error("Erro ao salvar no Firebase:", error);
+      alert("Erro ao salvar dados.");
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Tem certeza que deseja remover este item?")) {
-      saveCredentials(credentials.filter(c => c.id !== id));
+  const handleDelete = async (id: string) => {
+    if (confirm("Tem certeza que deseja remover este item permanentemente do banco de dados?")) {
+      try {
+        await deleteDoc(doc(db, "credentials", id));
+      } catch (error) {
+        console.error("Erro ao deletar:", error);
+      }
     }
   };
 
@@ -68,10 +90,12 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
       <div className="bg-slate-900 p-6 flex justify-between items-center text-white sticky top-0 z-10">
         <div>
           <h3 className="font-bold text-lg flex items-center gap-2">
-            <i className="fa-solid fa-vault text-blue-400"></i>
-            Cofre de E-mails
+            <i className="fa-solid fa-cloud-shield text-blue-400"></i>
+            Cloud Vault
           </h3>
-          <p className="text-xs text-slate-400">{credentials.length} contas armazenadas</p>
+          <p className="text-xs text-slate-400">
+            {isLoadingData ? 'Sincronizando...' : `${credentials.length} contas na nuvem`}
+          </p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -79,7 +103,7 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
             className="bg-slate-800 hover:bg-slate-700 p-2.5 rounded-lg transition-colors flex items-center gap-2 text-sm"
           >
             <i className="fa-solid fa-lock"></i>
-            <span>Sair</span>
+            <span>Bloquear</span>
           </button>
         </div>
       </div>
@@ -123,20 +147,24 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
               type="submit"
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-lg"
             >
-              <i className="fa-solid fa-plus"></i>
-              Adicionar ao Cofre
+              <i className="fa-solid fa-cloud-arrow-up"></i>
+              Sincronizar no Banco
             </button>
           </form>
         </div>
 
         {/* List Section */}
         <div className="p-6">
-          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Minhas Contas</h4>
+          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Dados Armazenados (Firebase)</h4>
           
-          {credentials.length === 0 ? (
+          {isLoadingData ? (
+            <div className="flex justify-center py-12">
+              <i className="fa-solid fa-circle-notch animate-spin text-blue-500 text-2xl"></i>
+            </div>
+          ) : credentials.length === 0 ? (
             <div className="text-center py-12 opacity-50">
-              <i className="fa-solid fa-folder-open text-4xl mb-3 text-gray-300"></i>
-              <p className="text-sm text-gray-500">Nenhuma conta salva ainda.</p>
+              <i className="fa-solid fa-database text-4xl mb-3 text-gray-300"></i>
+              <p className="text-sm text-gray-500">Nenhum dado no Firestore.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -179,7 +207,7 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-[10px] font-black text-blue-600/50 uppercase tracking-[0.2em] flex items-center gap-2">
                 <i className="fa-solid fa-shield-halved"></i>
-                Consultor de Segurança
+                Dica de Segurança AI
               </h4>
               <button 
                 onClick={fetchNewTip}
