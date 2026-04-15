@@ -1,5 +1,7 @@
 
 import React, { useState } from 'react';
+import { auth, db } from '../services/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface MasterLoginViewProps {
   onSuccess: () => void;
@@ -8,15 +10,34 @@ interface MasterLoginViewProps {
 const MasterLoginView: React.FC<MasterLoginViewProps> = ({ onSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const saved = localStorage.getItem('master_password');
-    if (password === saved) {
-      onSuccess();
-    } else {
-      setError('Senha incorreta. Tente novamente.');
-      setPassword('');
+    setLoading(true);
+    setError('');
+
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const savedPassword = userDoc.data().masterPassword;
+        if (password === savedPassword) {
+          onSuccess();
+        } else {
+          setError('Senha incorreta. Tente novamente.');
+          setPassword('');
+        }
+      } else {
+        setError('Configuração não encontrada. Por favor, reinicie o app.');
+      }
+    } catch (err) {
+      console.error("Erro ao verificar senha mestre:", err);
+      setError('Erro ao conectar ao servidor.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,6 +62,7 @@ const MasterLoginView: React.FC<MasterLoginViewProps> = ({ onSuccess }) => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={loading}
           />
         </div>
 
@@ -48,25 +70,12 @@ const MasterLoginView: React.FC<MasterLoginViewProps> = ({ onSuccess }) => {
 
         <button
           type="submit"
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition-colors mt-6"
+          disabled={loading}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition-colors mt-6 disabled:opacity-50"
         >
-          Desbloquear
+          {loading ? 'Verificando...' : 'Desbloquear'}
         </button>
       </form>
-      
-      <div className="mt-6 text-center">
-        <button 
-          onClick={() => {
-            if(confirm("Isso apagará sua senha mestre e todos os dados. Continuar?")) {
-              localStorage.clear();
-              window.location.reload();
-            }
-          }}
-          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-        >
-          Redefinir aplicativo
-        </button>
-      </div>
     </div>
   );
 };

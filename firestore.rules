@@ -1,0 +1,80 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: /users/{userId}
+// Fields:
+//   - masterPassword: string (required) - The master password for the vault.
+//   - setupComplete: bool (required) - Whether the initial setup is complete.
+//
+// Collection: /users/{userId}/credentials/{credentialId}
+// Fields:
+//   - email: string (required, email format) - The email address.
+//   - password: string (required) - The stored password.
+//   - createdAt: number (required) - Timestamp of creation.
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['masterPassword', 'setupComplete']) &&
+             data.keys().hasOnly(['masterPassword', 'setupComplete']) &&
+             data.masterPassword is string &&
+             data.masterPassword.size() >= 6 &&
+             data.masterPassword.size() <= 100 &&
+             data.setupComplete is bool;
+    }
+
+    function isValidCredential(data) {
+      return data.keys().hasAll(['email', 'password', 'createdAt']) &&
+             data.keys().hasOnly(['email', 'password', 'createdAt']) &&
+             data.email is string &&
+             isValidEmail(data.email) &&
+             data.password is string &&
+             data.password.size() > 0 &&
+             data.password.size() <= 500 &&
+             data.createdAt is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      
+      match /credentials/{credentialId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCredential(request.resource.data);
+        allow update: if isOwner(userId) && isValidCredential(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

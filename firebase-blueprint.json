@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing the master password and settings.",
+      "type": "object",
+      "properties": {
+        "masterPassword": {
+          "type": "string",
+          "description": "The master password for the vault."
+        },
+        "setupComplete": {
+          "type": "boolean",
+          "description": "Whether the initial setup is complete."
+        }
+      },
+      "required": ["masterPassword", "setupComplete"]
+    },
+    "Credential": {
+      "title": "Credential",
+      "description": "A stored email and password credential.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The email address."
+        },
+        "password": {
+          "type": "string",
+          "description": "The stored password."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp of creation."
+        }
+      },
+      "required": ["email", "password", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and master password."
+    },
+    "/users/{userId}/credentials/{credentialId}": {
+      "schema": "Credential",
+      "description": "Collection of credentials for a specific user."
+    }
+  }
+}

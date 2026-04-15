@@ -1,5 +1,7 @@
 {
   "name": "SecureGate Auth Simulator",
   "description": "A sophisticated login portal that dynamically detects email providers and features a first-time setup master password system.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "C7": [],
+  "aq": []
 }

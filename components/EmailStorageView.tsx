@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import BrandIcon from './BrandIcon';
 import { getSecurityTip } from '../services/geminiService';
 import { SecurityTip, StoredCredential } from '../types';
-import { db } from '../services/firebase';
+import { db, auth } from '../services/firebase';
+import { handleFirestoreError, OperationType } from '../services/errorHandlers';
 import { 
   collection, 
   addDoc, 
@@ -28,8 +29,12 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    // Configurar listener em tempo real do Firestore
-    const q = query(collection(db, "credentials"), orderBy("createdAt", "desc"));
+    const user = auth.currentUser;
+    if (!user) return;
+
+    // Configurar listener em tempo real do Firestore para a subcoleção do usuário
+    const path = `users/${user.uid}/credentials`;
+    const q = query(collection(db, path), orderBy("createdAt", "desc"));
     
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const items: StoredCredential[] = [];
@@ -39,7 +44,7 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
       setCredentials(items);
       setIsLoadingData(false);
     }, (error) => {
-      console.error("Erro ao buscar dados do Firebase:", error);
+      handleFirestoreError(error, OperationType.GET, path);
       setIsLoadingData(false);
     });
 
@@ -57,8 +62,12 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
 
   const handleAddCredential = async (e: React.FormEvent) => {
     e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const path = `users/${user.uid}/credentials`;
     try {
-      await addDoc(collection(db, "credentials"), {
+      await addDoc(collection(db, path), {
         email,
         password,
         createdAt: Date.now()
@@ -66,17 +75,20 @@ const EmailStorageView: React.FC<EmailStorageViewProps> = ({ onLogout }) => {
       setEmail('');
       setPassword('');
     } catch (error) {
-      console.error("Erro ao salvar no Firebase:", error);
-      alert("Erro ao salvar dados.");
+      handleFirestoreError(error, OperationType.WRITE, path);
     }
   };
 
   const handleDelete = async (id: string) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const path = `users/${user.uid}/credentials/${id}`;
     if (confirm("Tem certeza que deseja remover este item permanentemente do banco de dados?")) {
       try {
-        await deleteDoc(doc(db, "credentials", id));
+        await deleteDoc(doc(db, path));
       } catch (error) {
-        console.error("Erro ao deletar:", error);
+        handleFirestoreError(error, OperationType.DELETE, path);
       }
     }
   };
